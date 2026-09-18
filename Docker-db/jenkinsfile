@@ -1,0 +1,53 @@
+pipeline {
+    agent any
+    tools {
+      maven 'mymvn'
+    }
+
+    stages {
+        stage('code') {
+            steps {
+                git 'https://github.com/mounika-bochu/dockerwebapp.git'
+            }
+        }
+        stage('cqa') {
+            steps {
+             withSonarQubeEnv("mysonar") {
+                 sh "mvn clean verify org.sonarsource.scanner.maven:sonar-maven-plugin:sonar -Dsonar.projectKey=dockerweb -Dsonar.projectName='dockerweb'"
+             }  
+            }
+        }
+        stage('build') {
+            steps {
+               sh 'mvn clean package'
+               sh 'cp -r target Docker-app'
+            }
+        }
+        stage('artifact') {
+            steps {
+              nexusArtifactUploader artifacts: [[artifactId: 'vprofile', classifier: '', file: 'Docker-app/target/vprofile-v2.war', type: 'war']], credentialsId: 'nexus-i', groupId: 'com.visualpathit', nexusUrl: '3.107.190.27:8081', nexusVersion: 'nexus3', protocol: 'http', repository: 'myweb', version: 'v2'
+            }
+        }
+        stage('Dockerfile') {
+            steps {
+              sh 'docker build -t myapp Docker-app'
+              sh 'docker build -t mydb Docker-db'
+            }
+        }
+        stage('deploy') {
+            steps {
+                sh 'docker run -d --name devopsdb -p 3306:3306 mydb'
+                sh 'docker run -itd --name appcont -p 1234:8080 --link devopsdb:mysqlcon myapp'
+            }
+        }
+    }
+     post {
+        success {
+            emailext(
+                subject: "Build Successful",
+                body: "Jenkins build completed successfully: ${env.BUILD_URL}",
+                to: "mounikayadav0515@gmail.com"
+            )
+        }
+    }
+}
